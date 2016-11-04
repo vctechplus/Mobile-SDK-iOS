@@ -10,9 +10,10 @@
 #import "BluetoothConnectorViewController.h"
 #import "DemoAlertView.h"
 #import "DemoUtilityMacro.h"
+#import "DemoUtility.h"
 
 #define ENTER_DEBUG_MODE 0
-#define ENABLE_REMOTE_LOGGER 0
+#define ENABLE_REMOTE_LOGGER 1
 
 @interface DJIRootViewController ()
 
@@ -26,9 +27,16 @@
 @end
 
 @implementation DJIRootViewController
+{
+    NSTimer* _mainPulseTimer;
+    double battHealthCheckTime;
+    double lastBatteryStateUpdateTime;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    
+    [[UIApplication sharedApplication] setIdleTimerDisabled:YES];
     
     //Register App with App Key
     NSString* appKey = @""; //TODO: Please enter your App Key here
@@ -100,6 +108,11 @@
         self.product = newProduct;
         [self.connectButton setEnabled:YES];
         
+        DJILogDebug(@"setting product delegate");
+        self.product.delegate = self;
+        [self setBattDelegate];
+        [self startMainPulse];
+        
     } else {
         NSString* message = [NSString stringWithFormat:@"Connection lost. Back to root. "];
 
@@ -150,6 +163,55 @@
         _productConnectionStatus.text = NSLocalizedString(@"Status: Product Not Connected", @"");
         _productModel.text = NSLocalizedString(@"Model: Unknown", @"");
         [self updateFirmwareVersion:nil];
+    }
+}
+
+/* BATTERY DEBUG */
+
+- (void) setBattDelegate
+{
+    __weak DJIBattery* battery = [DemoComponentHelper fetchBattery];
+    if (battery) {
+        DJILogDebug(@"setting battery delegate");
+        [battery setDelegate:self];
+        lastBatteryStateUpdateTime = CFAbsoluteTimeGetCurrent();
+    }
+}
+
+- (void) componentWithKey:(NSString *)key changedFrom:(DJIBaseComponent *)oldComponent to:(DJIBaseComponent *)newComponent
+{
+    DJILogDebug(@"component with key %@ changed from %@connected to %@connected", key ? key : @"NONE", (oldComponent && oldComponent.isConnected) ? @"" : @"NOT ", (newComponent && newComponent.isConnected) ? @"" : @"NOT ");
+    [self setBattDelegate];
+}
+
+- (void)battery:(DJIBattery *)battery didUpdateState:(DJIBatteryState *)batteryState
+{
+    lastBatteryStateUpdateTime = CFAbsoluteTimeGetCurrent();
+    if (batteryState.batteryEnergyRemainingPercent > 0) {
+        DJILogDebug(@"ALL GOOD, Battery state updated with: %d%% (restart RC and try again)", batteryState.batteryEnergyRemainingPercent);
+    } else {
+        DJILogDebug(@"NOT good, Battery state updated with: %d%%", batteryState.batteryEnergyRemainingPercent);
+    }
+}
+
+- (void) checkBatteryDelegate:(id)timer
+{
+    double now = CFAbsoluteTimeGetCurrent();
+    
+    if (now > battHealthCheckTime) {
+        // battery self check...
+        if (now > (lastBatteryStateUpdateTime + 5)) {
+            DJILogDebug(@"trying to set battery delegate");
+            [self setBattDelegate];
+        }
+        battHealthCheckTime = now + 2;
+    }
+}
+
+-(void) startMainPulse
+{
+    if (_mainPulseTimer == nil) {
+        _mainPulseTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(checkBatteryDelegate:) userInfo:nil repeats:YES];
     }
 }
 

@@ -9,7 +9,7 @@
 #import <DJISDK/DJISDK.h>
 
 
-@interface DJIRootViewController : UIViewController<DJISDKManagerDelegate>
+@interface DJIRootViewController : UIViewController<DJISDKManagerDelegate, DJIBatteryDelegate, DJIBaseProductDelegate>
 
 -(IBAction) onConnectButtonClicked:(id)sender;
 
